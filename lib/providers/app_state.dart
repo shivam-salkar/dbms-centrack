@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/officer.dart';
+import '../services/supabase_service.dart';
 
 class AppState extends ChangeNotifier {
   bool _isDarkMode = false;
@@ -21,6 +22,7 @@ class AppState extends ChangeNotifier {
   }
 
   void logout() {
+    SupabaseService.signOut();
     _currentOfficer = null;
     _activeDrawerIndex = 0;
     notifyListeners();

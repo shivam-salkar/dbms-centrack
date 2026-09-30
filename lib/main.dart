@@ -4,7 +4,12 @@ import 'theme/app_theme.dart';
 import 'providers/app_state.dart';
 import 'screens/login_screen.dart';
 
-void main() {
+import 'services/supabase_service.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SupabaseService.initialize();
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState(),

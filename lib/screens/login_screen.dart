@@ -5,6 +5,7 @@ import '../models/officer.dart';
 import '../providers/app_state.dart';
 import '../data/mock_data.dart';
 import '../theme/app_theme.dart';
+import '../services/supabase_service.dart';
 import 'dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -35,24 +36,19 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
     });
 
-    await Future.delayed(const Duration(milliseconds: 600));
-
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
+
+    final officer = await SupabaseService.signIn(
+      email: email,
+      password: password,
+    );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    Officer? matchedOfficer;
-    for (final o in MockData.officers) {
-      if (o.email == email && o.password == password) {
-        matchedOfficer = o;
-        break;
-      }
-    }
-
-    if (matchedOfficer != null) {
-      context.read<AppState>().login(matchedOfficer);
+    if (officer != null) {
+      context.read<AppState>().login(officer);
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const DashboardScreen()),
