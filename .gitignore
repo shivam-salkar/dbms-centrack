@@ -116,3 +116,6 @@ Desktop.ini
 .svn/
 .swiftpm/
 migrate_working_dir/
+.env
+.env.*
+!.env.example

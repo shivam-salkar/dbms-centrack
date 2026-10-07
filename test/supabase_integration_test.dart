@@ -68,10 +68,14 @@ void main() {
       expect(ref['occupations'], isNotEmpty);
     });
 
-    test('6. Database READ: All Households from Supabase', () async {
-      final households = await SupabaseService.getAllHouseholds();
+    test('6. Database READ: All Households from Supabase (Paginated & Search)', () async {
+      final households = await SupabaseService.getAllHouseholds(limit: 20);
       expect(households, isNotEmpty);
-      expect(households.any((h) => h.id == 'HH-001'), isTrue);
+      expect(households.length, lessThanOrEqualTo(20));
+
+      final searched = await SupabaseService.getAllHouseholds(query: 'HH-001');
+      expect(searched, isNotEmpty);
+      expect(searched.every((h) => h.id.contains('HH-001')), isTrue);
     });
 
     test('7. End-to-End CRUD Cycle: INSERT -> READ -> UPDATE -> REVERSE UPDATE -> DELETE', () async {
