@@ -15,7 +15,8 @@ class Officer {
     required this.password,
   });
 
-  bool get isAdmin => role == 'District Administrator';
+  bool get isAdmin =>
+      role == 'District Administrator' || role.toUpperCase() == 'ADMIN';
 
   Officer copyWith({
     String? name,

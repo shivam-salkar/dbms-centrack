@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../models/officer.dart';
 import '../providers/app_state.dart';
-import '../data/mock_data.dart';
 import '../theme/app_theme.dart';
 import '../services/supabase_service.dart';
 import 'dashboard_screen.dart';
@@ -16,11 +14,14 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const bool enableDemoLogin = true; // Toggle for development demo helper
+
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _showError = false;
+  String _errorMessage = 'Invalid credentials. Try again.';
   bool _isLoading = false;
 
   @override
@@ -28,6 +29,14 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _fillDemoCredentials({required String email, required String password}) {
+    setState(() {
+      _emailController.text = email;
+      _passwordController.text = password;
+      _showError = false;
+    });
   }
 
   void _handleLogin() async {
@@ -54,7 +63,10 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (_) => const DashboardScreen()),
       );
     } else {
-      setState(() => _showError = true);
+      setState(() {
+        _showError = true;
+        _errorMessage = 'Invalid credentials or connection issue. Try again.';
+      });
     }
   }
 
@@ -104,7 +116,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'National Population Register System',
+                      'National Population Register System (Jangana)',
                       style: GoogleFonts.notoSans(
                         fontSize: 13,
                         color: AppColors.textSecondary,
@@ -118,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: 60,
                       color: AppColors.accent,
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
 
                     // Error Banner
                     if (_showError)
@@ -137,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Invalid credentials. Try again.',
+                                _errorMessage,
                                 style: GoogleFonts.notoSans(
                                   fontSize: 13,
                                   color: AppColors.error,
@@ -156,7 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Email / Phone Number',
+                            'Email Address',
                             style: GoogleFonts.notoSans(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -170,7 +182,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             style: GoogleFonts.notoSans(fontSize: 14),
                             decoration: const InputDecoration(
                               prefixIcon: Icon(Icons.email_outlined, size: 20),
-                              hintText: 'Enter your email or phone',
+                              hintText: 'Enter your email',
                             ),
                             validator: (v) => v!.isEmpty ? 'Required' : null,
                           ),
@@ -210,7 +222,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
                     // Login Button
                     SizedBox(
@@ -243,6 +255,80 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                       ),
                     ),
+
+                    // ── Development Quick Demo Login ──
+                    if (enableDemoLogin) ...[
+                      const SizedBox(height: 20),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF222222) : const Color(0xFFF3F4F6),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF333333) : const Color(0xFFE5E7EB),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.flash_on, size: 14, color: AppColors.accent),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Quick Demo Login (Academic Demo)',
+                                  style: GoogleFonts.notoSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: [
+                                ActionChip(
+                                  label: Text(
+                                    'Admin',
+                                    style: GoogleFonts.notoSans(fontSize: 11, fontWeight: FontWeight.w600),
+                                  ),
+                                  avatar: const Icon(Icons.admin_panel_settings, size: 14),
+                                  onPressed: () => _fillDemoCredentials(
+                                    email: 'admin.demo@janganatest.local',
+                                    password: 'JanganaDemo@2026',
+                                  ),
+                                ),
+                                ActionChip(
+                                  label: Text(
+                                    'Enumerator 1',
+                                    style: GoogleFonts.notoSans(fontSize: 11, fontWeight: FontWeight.w600),
+                                  ),
+                                  avatar: const Icon(Icons.person, size: 14),
+                                  onPressed: () => _fillDemoCredentials(
+                                    email: 'enumerator1.demo@janganatest.local',
+                                    password: 'JanganaEnum@2026',
+                                  ),
+                                ),
+                                ActionChip(
+                                  label: Text(
+                                    'Enumerator 2',
+                                    style: GoogleFonts.notoSans(fontSize: 11, fontWeight: FontWeight.w600),
+                                  ),
+                                  avatar: const Icon(Icons.person_outline, size: 14),
+                                  onPressed: () => _fillDemoCredentials(
+                                    email: 'enumerator2.demo@janganatest.local',
+                                    password: 'JanganaEnum2@2026',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 16),
 
@@ -294,4 +380,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-

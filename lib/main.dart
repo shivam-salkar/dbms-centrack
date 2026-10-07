@@ -3,16 +3,19 @@ import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/app_state.dart';
 import 'screens/login_screen.dart';
-
+import 'screens/dashboard_screen.dart';
 import 'services/supabase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseService.initialize();
 
+  final appState = AppState();
+  await appState.checkExistingSession();
+
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => AppState(),
+    ChangeNotifierProvider.value(
+      value: appState,
       child: const CensusTrackerApp(),
     ),
   );
@@ -31,7 +34,9 @@ class CensusTrackerApp extends StatelessWidget {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-          home: const LoginScreen(),
+          home: appState.currentOfficer != null
+              ? const DashboardScreen()
+              : const LoginScreen(),
         );
       },
     );

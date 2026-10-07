@@ -5,6 +5,7 @@ import '../providers/app_state.dart';
 import '../data/mock_data.dart';
 import '../models/household.dart';
 import '../theme/app_theme.dart';
+import '../services/supabase_service.dart';
 import '../widgets/nav_drawer.dart';
 import '../widgets/stat_card.dart';
 import 'phase1_entry_screen.dart';
@@ -24,6 +25,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _searchController = TextEditingController();
   Household? _searchResult;
   bool _searched = false;
+  bool _isSearching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppState>().refreshDashboardData();
+    });
+  }
 
   @override
   void dispose() {
@@ -31,19 +41,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
-  void _handleSearch(String query) {
-    final q = query.trim().toUpperCase();
+  void _handleSearch(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _searched = false;
+        _searchResult = null;
+      });
+      return;
+    }
+
     setState(() {
       _searched = true;
-      _searchResult = MockData.households.firstWhere(
-        (h) => h.id.toUpperCase() == q ||
-            h.headName.toUpperCase().contains(q),
-        orElse: () => const Household(
-          id: '', headName: '', memberCount: 0,
-          address: '', phase1Complete: false, phase2Complete: false,
-        ),
-      );
-      if (_searchResult!.id.isEmpty) _searchResult = null;
+      _isSearching = true;
+    });
+
+    final results = await SupabaseService.searchHouseholds(q);
+
+    if (!mounted) return;
+    setState(() {
+      _isSearching = false;
+      _searchResult = results.isNotEmpty ? results.first : null;
     });
   }
 
@@ -65,11 +83,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     Widget screen;
     switch (index) {
-      case 1: screen = const Phase1EntryScreen(); break;
-      case 2: screen = const Phase2EntryScreen(); break;
-      case 3: screen = const ProgressScreen(); break;
-      case 4: screen = const MetricsScreen(); break;
-      default: screen = const _PlaceholderScreen(title: 'Settings'); break;
+      case 1:
+        screen = const Phase1EntryScreen();
+        break;
+      case 2:
+        screen = const Phase2EntryScreen();
+        break;
+      case 3:
+        screen = const ProgressScreen();
+        break;
+      case 4:
+        screen = const MetricsScreen();
+        break;
+      default:
+        screen = const _PlaceholderScreen(title: 'Settings');
+        break;
     }
     Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
   }
@@ -78,6 +106,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final isDark = appState.isDarkMode;
+    final stats = appState.dashboardStats;
 
     return Scaffold(
       appBar: AppBar(
@@ -85,13 +114,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('National Dashboard'),
-            Text(
-              'Last updated: ${MockData.lastUpdated}',
-              style: GoogleFonts.notoSans(fontSize: 11, color: Colors.white70),
+            Row(
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: Colors.greenAccent,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Supabase Connected • Live',
+                  style: GoogleFonts.notoSans(fontSize: 11, color: Colors.white70),
+                ),
+              ],
             ),
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            tooltip: 'Refresh from Supabase',
+            onPressed: () async {
+              await appState.refreshDashboardData();
+              if (_searchResult != null) {
+                final res = await SupabaseService.searchHouseholds(_searchResult!.id);
+                if (res.isNotEmpty && mounted) {
+                  setState(() => _searchResult = res.first);
+                }
+              }
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Refreshed data from Supabase'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              }
+            },
+          ),
           IconButton(
             icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode, color: Colors.white),
             onPressed: () => context.read<AppState>().toggleDarkMode(),
@@ -109,13 +172,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Quick Stats Grid ──
-            Text(
-              'National Overview',
-              style: GoogleFonts.notoSans(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Live Census Overview (Supabase)',
+                  style: GoogleFonts.notoSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  '${appState.households.length} Households in DB',
+                  style: GoogleFonts.notoSans(
+                    fontSize: 12,
+                    color: AppColors.accent,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             GridView.count(
@@ -128,28 +204,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 StatCard(
                   title: 'Total Households',
-                  value: MockData.totalHouseholds,
+                  value: stats['totalHouseholds'] ?? '0',
                   icon: Icons.home,
                 ),
                 StatCard(
                   title: 'Total Persons',
-                  value: MockData.totalPersons,
+                  value: stats['totalPersons'] ?? '0',
                   icon: Icons.people,
                 ),
                 StatCard(
                   title: 'Districts Covered',
-                  value: MockData.districtsCovered,
+                  value: stats['districtsCovered'] ?? '4 / 4',
                   icon: Icons.map,
                 ),
                 StatCard(
-                  title: 'Completion',
-                  value: MockData.overallCompletion,
+                  title: 'Completion Status',
+                  value: stats['overallCompletion'] ?? 'Live DB',
                   icon: Icons.donut_large,
                   trailing: SizedBox(
                     width: 32,
                     height: 32,
                     child: CircularProgressIndicator(
-                      value: MockData.overallCompletionValue,
+                      value: (stats['overallCompletionValue'] as num?)?.toDouble() ?? 1.0,
                       strokeWidth: 4,
                       backgroundColor: AppColors.divider,
                       color: AppColors.primary,
@@ -163,7 +239,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             // ── Search ──
             Text(
-              'Household Search',
+              'Household Search (Live Supabase)',
               style: GoogleFonts.notoSans(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -175,7 +251,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               controller: _searchController,
               style: GoogleFonts.notoSans(fontSize: 14),
               decoration: InputDecoration(
-                hintText: 'Search by Household ID (e.g. HH-001)',
+                hintText: 'Search by Household ID (e.g. HH-001, HH-002, TEST_...)',
                 prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.arrow_forward, size: 20),
@@ -185,10 +261,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
               onSubmitted: _handleSearch,
             ),
 
-            if (_searched) ...[
+            if (_isSearching) ...[
+              const SizedBox(height: 12),
+              const Center(child: CircularProgressIndicator()),
+            ] else if (_searched) ...[
               const SizedBox(height: 12),
               if (_searchResult != null)
-                _HouseholdCard(household: _searchResult!)
+                _HouseholdCard(
+                  household: _searchResult!,
+                  onUpdated: (updated) {
+                    setState(() => _searchResult = updated);
+                  },
+                  onDeleted: () {
+                    setState(() => _searchResult = null);
+                  },
+                )
               else
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -201,9 +288,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     children: [
                       const Icon(Icons.search_off, color: AppColors.error, size: 18),
                       const SizedBox(width: 8),
-                      Text(
-                        'No household found. Try "HH-001" to "HH-005".',
-                        style: GoogleFonts.notoSans(fontSize: 13, color: AppColors.error),
+                      Expanded(
+                        child: Text(
+                          'No household matching "${_searchController.text}" found in Supabase.',
+                          style: GoogleFonts.notoSans(fontSize: 13, color: AppColors.error),
+                        ),
                       ),
                     ],
                   ),
@@ -212,9 +301,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             const SizedBox(height: 24),
 
+            // ── Live Supabase Households List ──
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Live Supabase Records',
+                  style: GoogleFonts.notoSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => appState.refreshDashboardData(),
+                  icon: const Icon(Icons.sync, size: 16),
+                  label: const Text('Sync', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            if (appState.households.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Center(
+                  child: Text(
+                    'No census records found in database. Use "Data Entry Phase 1" to create one!',
+                    style: GoogleFonts.notoSans(fontSize: 13, color: AppColors.textSecondary),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: appState.households.length,
+                itemBuilder: (context, index) {
+                  final hh = appState.households[index];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: _HouseholdCard(
+                      household: hh,
+                      onUpdated: (_) => appState.refreshDashboardData(),
+                      onDeleted: () => appState.refreshDashboardData(),
+                    ),
+                  );
+                },
+              ),
+
+            const SizedBox(height: 24),
+
             // ── Recent Activity ──
             Text(
-              'Recent Activity',
+              'Activity Trail',
               style: GoogleFonts.notoSans(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -277,19 +418,144 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   IconData _activityIcon(String name) {
     switch (name) {
-      case 'check_circle': return Icons.check_circle_outline;
-      case 'verified': return Icons.verified_outlined;
-      case 'person_add': return Icons.person_add_outlined;
-      case 'pending': return Icons.pending_outlined;
-      case 'description': return Icons.description_outlined;
-      default: return Icons.info_outline;
+      case 'check_circle':
+        return Icons.check_circle_outline;
+      case 'verified':
+        return Icons.verified_outlined;
+      case 'person_add':
+        return Icons.person_add_outlined;
+      case 'pending':
+        return Icons.pending_outlined;
+      case 'description':
+        return Icons.description_outlined;
+      default:
+        return Icons.info_outline;
     }
   }
 }
 
 class _HouseholdCard extends StatelessWidget {
   final Household household;
-  const _HouseholdCard({required this.household});
+  final ValueChanged<Household>? onUpdated;
+  final VoidCallback? onDeleted;
+
+  const _HouseholdCard({
+    required this.household,
+    this.onUpdated,
+    this.onDeleted,
+  });
+
+  Future<void> _handleEditResidents(BuildContext context) async {
+    final controller = TextEditingController(text: household.memberCount.toString());
+    final newCount = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Edit Residents Count: ${household.id}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Current residents count: ${household.memberCount}',
+              style: GoogleFonts.notoSans(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'New Residents Count',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final count = int.tryParse(controller.text.trim());
+              Navigator.pop(ctx, count);
+            },
+            child: const Text('Save to Supabase'),
+          ),
+        ],
+      ),
+    );
+
+    if (newCount != null && context.mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      final appState = context.read<AppState>();
+      final success = await SupabaseService.updateHouseholdResidentsCount(
+        householdIdOrNumber: household.dbId ?? household.id,
+        count: newCount,
+      );
+      if (success) {
+        await appState.refreshDashboardData();
+        onUpdated?.call(household.copyWith(memberCount: newCount));
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Updated ${household.id} residents count to $newCount in Supabase'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Failed to update residents count in Supabase'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleDelete(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete Household ${household.id}?'),
+        content: Text(
+          'Are you sure you want to delete this record (${household.headName}, ${household.memberCount} members) from Supabase?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete from Supabase'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      final appState = context.read<AppState>();
+      final success = await SupabaseService.deleteHousehold(household.dbId ?? household.id);
+      if (success) {
+        await appState.refreshDashboardData();
+        onDeleted?.call();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Deleted ${household.id} from Supabase'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Failed to delete household from Supabase'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -336,14 +602,18 @@ class _HouseholdCard extends StatelessWidget {
             const SizedBox(height: 4),
             Row(
               children: [
-                Icon(Icons.people, size: 14, color: AppColors.textSecondary),
+                const Icon(Icons.people, size: 14, color: AppColors.textSecondary),
                 const SizedBox(width: 4),
                 Text(
-                  '${household.memberCount} members',
-                  style: GoogleFonts.notoSans(fontSize: 13, color: AppColors.textSecondary),
+                  '${household.memberCount} residents',
+                  style: GoogleFonts.notoSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.accent,
+                  ),
                 ),
                 const SizedBox(width: 16),
-                Icon(Icons.location_on, size: 14, color: AppColors.textSecondary),
+                const Icon(Icons.location_on, size: 14, color: AppColors.textSecondary),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
@@ -355,15 +625,22 @@ class _HouseholdCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () {},
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 36),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.edit, size: 14),
+                    label: const Text('Edit Residents', style: TextStyle(fontSize: 12)),
+                    onPressed: () => _handleEditResidents(context),
+                  ),
                 ),
-                child: Text('View Details', style: GoogleFonts.notoSans(fontSize: 13)),
-              ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
+                  tooltip: 'Delete Record',
+                  onPressed: () => _handleDelete(context),
+                ),
+              ],
             ),
           ],
         ),
@@ -432,7 +709,7 @@ class _PlaceholderScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.settings, size: 64, color: AppColors.textSecondary),
+            const Icon(Icons.settings, size: 64, color: AppColors.textSecondary),
             const SizedBox(height: 16),
             Text(
               '$title — Coming Soon',

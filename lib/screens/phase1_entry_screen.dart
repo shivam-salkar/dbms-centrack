@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../data/mock_data.dart';
 import '../theme/app_theme.dart';
+import '../services/supabase_service.dart';
 import '../widgets/nav_drawer.dart';
 import 'dashboard_screen.dart';
 import 'phase2_entry_screen.dart';
@@ -20,47 +21,51 @@ class Phase1EntryScreen extends StatefulWidget {
 
 class _Phase1EntryScreenState extends State<Phase1EntryScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _householdIdController = TextEditingController(
+    text: 'HH-${DateTime.now().millisecondsSinceEpoch % 10000}',
+  );
   bool _submitted = false;
+  bool _isSubmitting = false;
 
   // Section A
-  String? _state;
-  String? _district;
-  final _townController = TextEditingController();
-  final _buildingNumberController = TextEditingController();
-  final _censusHouseController = TextEditingController();
-  String? _predominantUse;
-  String? _structureCondition;
+  String? _state = 'Uttar Pradesh';
+  String? _district = 'Lucknow';
+  final _townController = TextEditingController(text: 'Hazratganj');
+  final _buildingNumberController = TextEditingController(text: 'BLD-101');
+  final _censusHouseController = TextEditingController(text: 'CH-101');
+  String? _predominantUse = 'Wholly Residential';
+  String? _structureCondition = 'Good';
   int _dwellingUnits = 1;
 
   // Section B
-  String? _floorMaterial;
-  String? _wallMaterial;
-  String? _roofMaterial;
-  int _numRooms = 1;
-  int _numCouples = 0;
+  String? _floorMaterial = 'Cement';
+  String? _wallMaterial = 'Burnt Brick';
+  String? _roofMaterial = 'R.C.C.';
+  int _numRooms = 2;
+  int _numCouples = 1;
   String _residenceStatus = 'Permanent';
 
   // Section C
   final _headNameController = TextEditingController();
   String _headSex = 'Male';
-  String? _ownershipStatus;
-  String? _drinkingWaterSource;
+  String? _ownershipStatus = 'Owned';
+  String? _drinkingWaterSource = 'Tap water from treated source';
   String _waterLocation = 'Within premises';
-  String? _latrineFacility;
-  String? _wasteWaterOutlet;
+  String? _latrineFacility = 'Flush/pour flush latrine connected to piped sewer system';
+  String? _wasteWaterOutlet = 'Closed drainage';
   String _bathingFacility = 'Yes, within premises';
   String _hasKitchen = 'Yes';
-  String? _cookingFuel;
-  String? _lightingSource;
-  int _householdSize = 1;
+  String? _cookingFuel = 'LPG/PNG';
+  String? _lightingSource = 'Electricity';
+  int _householdSize = 4;
 
   // Section D
   bool _hasRadio = false;
-  bool _hasTv = false;
+  bool _hasTv = true;
   bool _hasComputer = false;
   bool _hasLandline = false;
   bool _hasMobile = true;
-  bool _hasInternet = false;
+  bool _hasInternet = true;
   List<String> _vehicles = [];
 
   List<String> get _filteredDistricts =>
@@ -68,7 +73,7 @@ class _Phase1EntryScreenState extends State<Phase1EntryScreen> {
 
   bool _isRequiredMissing(String? value) => _submitted && (value == null || value.isEmpty);
 
-  void _handleSubmit() {
+  void _handleSubmit() async {
     setState(() => _submitted = true);
     if (_formKey.currentState!.validate() &&
         _state != null && _district != null && _predominantUse != null &&
@@ -76,26 +81,83 @@ class _Phase1EntryScreenState extends State<Phase1EntryScreen> {
         _roofMaterial != null && _ownershipStatus != null && _drinkingWaterSource != null &&
         _latrineFacility != null && _wasteWaterOutlet != null && _cookingFuel != null &&
         _lightingSource != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Text('HH-006 submitted successfully', style: GoogleFonts.notoSans()),
-            ],
+      
+      setState(() => _isSubmitting = true);
+      final hhId = _householdIdController.text.trim().isNotEmpty
+          ? _householdIdController.text.trim()
+          : 'HH-${DateTime.now().millisecondsSinceEpoch % 10000}';
+      final bldNo = _buildingNumberController.text.trim().isNotEmpty
+          ? _buildingNumberController.text.trim()
+          : 'BLD-101';
+      final locality = _townController.text.trim().isNotEmpty
+          ? _townController.text.trim()
+          : (_district ?? 'Hazratganj');
+      final headName = _headNameController.text.trim().isNotEmpty
+          ? _headNameController.text.trim()
+          : 'Head of Household';
+
+      try {
+        final result = await SupabaseService.createHouseholdPhase1(
+          censusHouseNumber: hhId,
+          buildingNumber: bldNo,
+          locality: locality,
+          headName: headName,
+          residentsCount: _householdSize,
+          headCategory: 'GEN',
+          dwellingRooms: _numRooms,
+          floorMaterial: _floorMaterial,
+          wallMaterial: _wallMaterial,
+          roofMaterial: _roofMaterial,
+          ownershipStatus: _ownershipStatus,
+          waterSource: _drinkingWaterSource,
+          latrineFacility: _latrineFacility,
+          wasteWaterOutlet: _wasteWaterOutlet,
+          cookingFuel: _cookingFuel,
+          lightingSource: _lightingSource,
+        );
+
+        if (!mounted) return;
+        setState(() => _isSubmitting = false);
+
+        if (result != null) {
+          context.read<AppState>().refreshDashboardData();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$hhId submitted and saved to Supabase!',
+                      style: GoogleFonts.notoSans(),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _isSubmitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving to Supabase: $e'),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
           ),
-          backgroundColor: AppColors.success,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+        );
+      }
     }
   }
 
   void _handleSaveDraft() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Draft saved', style: GoogleFonts.notoSans()),
+        content: Text('Draft saved locally', style: GoogleFonts.notoSans()),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -120,6 +182,7 @@ class _Phase1EntryScreenState extends State<Phase1EntryScreen> {
 
   @override
   void dispose() {
+    _householdIdController.dispose();
     _townController.dispose();
     _buildingNumberController.dispose();
     _censusHouseController.dispose();
@@ -149,7 +212,7 @@ class _Phase1EntryScreenState extends State<Phase1EntryScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // HH ID chip
+                    // HH ID Input
                     Row(
                       children: [
                         Text(
@@ -157,26 +220,28 @@ class _Phase1EntryScreenState extends State<Phase1EntryScreen> {
                           style: GoogleFonts.notoSans(fontSize: 13, color: AppColors.textSecondary),
                         ),
                         const SizedBox(width: 8),
-                        Chip(
-                          label: Text(
-                            'HH-006',
+                        Expanded(
+                          child: TextFormField(
+                            controller: _householdIdController,
                             style: GoogleFonts.notoSans(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                              color: textColor,
+                            ),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              hintText: 'e.g. HH-006 or TEST_JANGANA_...',
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.autorenew, size: 16),
+                                tooltip: 'Generate Test ID',
+                                onPressed: () {
+                                  final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+                                  _householdIdController.text = 'TEST_JANGANA_INTEGRATION_$ts';
+                                },
+                              ),
                             ),
                           ),
-                          backgroundColor: AppColors.primary,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          visualDensity: VisualDensity.compact,
-                          shape: const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(4)),
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          'Auto-generated',
-                          style: GoogleFonts.notoSans(fontSize: 11, color: AppColors.textSecondary),
                         ),
                       ],
                     ),
@@ -496,8 +561,14 @@ class _Phase1EntryScreenState extends State<Phase1EntryScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: _handleSubmit,
-                      child: Text('Submit Entry', style: GoogleFonts.notoSans(fontSize: 14)),
+                      onPressed: _isSubmitting ? null : _handleSubmit,
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Text('Submit Entry', style: GoogleFonts.notoSans(fontSize: 14)),
                     ),
                   ),
                 ],

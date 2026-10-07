@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../providers/app_state.dart';
 import '../data/mock_data.dart';
 import '../theme/app_theme.dart';
+import '../services/supabase_service.dart';
 import '../widgets/nav_drawer.dart';
 import 'dashboard_screen.dart';
 import 'phase1_entry_screen.dart';
@@ -23,6 +24,7 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
   String? _selectedHouseholdId;
   int _currentMemberIndex = 0;
   final List<Map<String, dynamic>> _members = [{}];
+  bool _isSubmitting = false;
 
   Map<String, dynamic> get _current => _members[_currentMemberIndex];
 
@@ -60,23 +62,76 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
     });
   }
 
-  void _handleSubmit() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Text(
-              'Household ${_selectedHouseholdId ?? 'HH-001'} fully enumerated',
-              style: GoogleFonts.notoSans(),
-            ),
-          ],
+  void _handleSubmit() async {
+    final targetHh = _selectedHouseholdId;
+    if (targetHh == null || targetHh.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a household first'),
+          backgroundColor: AppColors.error,
         ),
-        backgroundColor: AppColors.success,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      int createdCount = 0;
+      for (int i = 0; i < _members.length; i++) {
+        final m = _members[i];
+        final name = (m['name'] as String?)?.trim();
+        final effectiveName = (name != null && name.isNotEmpty)
+            ? name
+            : 'Member ${i + 1}';
+        final rel = m['relationship'] as String? ?? 'Member';
+        final sex = m['sex'] as String? ?? 'Male';
+        final age = int.tryParse(m['age']?.toString() ?? '25') ?? 25;
+        final marital = m['maritalStatus'] as String? ?? 'Never Married';
+
+        await SupabaseService.createPersonPhase2(
+          householdIdOrNumber: targetHh,
+          name: effectiveName,
+          relationship: rel,
+          sex: sex,
+          age: age,
+          maritalStatus: marital,
+        );
+        createdCount++;
+      }
+
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      context.read<AppState>().refreshDashboardData();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Household $targetHh: saved $createdCount member(s) to Supabase!',
+                  style: GoogleFonts.notoSans(),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.success,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving members to Supabase: $e'),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   void _navigate(BuildContext context, int index) {
@@ -122,17 +177,24 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
                     style: GoogleFonts.notoSans(fontSize: 13, fontWeight: FontWeight.w500, color: textColor),
                   ),
                   const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    value: _selectedHouseholdId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(isDense: true),
-                    hint: Text('Select Phase 1 completed household', style: GoogleFonts.notoSans(fontSize: 13)),
-                    style: GoogleFonts.notoSans(fontSize: 13, color: textColor),
-                    items: MockData.phase1CompletedHouseholds.map((h) => DropdownMenuItem(
-                      value: h.id,
-                      child: Text('${h.id} — ${h.headName}', style: GoogleFonts.notoSans(fontSize: 13, color: textColor)),
-                    )).toList(),
-                    onChanged: (v) => setState(() => _selectedHouseholdId = v),
+                  Builder(
+                    builder: (context) {
+                      final available = appState.households.isNotEmpty
+                          ? appState.households
+                          : MockData.phase1CompletedHouseholds;
+                      return DropdownButtonFormField<String>(
+                        value: _selectedHouseholdId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(isDense: true),
+                        hint: Text('Select Phase 1 completed household', style: GoogleFonts.notoSans(fontSize: 13)),
+                        style: GoogleFonts.notoSans(fontSize: 13, color: textColor),
+                        items: available.map((h) => DropdownMenuItem(
+                          value: h.id,
+                          child: Text('${h.id} — ${h.headName}', style: GoogleFonts.notoSans(fontSize: 13, color: textColor)),
+                        )).toList(),
+                        onChanged: (v) => setState(() => _selectedHouseholdId = v),
+                      );
+                    },
                   ),
                   const SizedBox(height: 16),
 
@@ -298,8 +360,14 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: _handleSubmit,
-                    child: Text('Save & Submit', style: GoogleFonts.notoSans(fontSize: 13)),
+                    onPressed: _isSubmitting ? null : _handleSubmit,
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text('Save & Submit', style: GoogleFonts.notoSans(fontSize: 13)),
                   ),
                 ),
               ],

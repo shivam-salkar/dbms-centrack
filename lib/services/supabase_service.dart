@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/officer.dart';
-import '../data/mock_data.dart';
+import '../models/household.dart';
 
 class SupabaseService {
   static const String supabaseUrl = 'https://azmpvvbivdkqjdrqcmba.supabase.co';
@@ -28,13 +28,14 @@ class SupabaseService {
     }
   }
 
-  /// Sign in with Supabase Auth
+  /// Sign in with Supabase Auth (Strict - No mock fallback bypass)
   static Future<Officer?> signIn({
     required String email,
     required String password,
   }) async {
     if (!_initialized) {
-      return _fallbackMockLogin(email, password);
+      debugPrint('[SupabaseService] Error: Supabase client is not initialized');
+      return null;
     }
 
     try {
@@ -45,48 +46,91 @@ class SupabaseService {
 
       final user = response.user;
       if (user == null) {
-        return _fallbackMockLogin(email, password);
+        return null;
       }
 
-      // Try fetching enumerator profile linked to this auth user
-      try {
-        final profile = await client
-            .from('enumerator')
-            .select()
-            .eq('auth_user_id', user.id)
-            .maybeSingle();
-
-        if (profile != null) {
-          return Officer(
-            name: profile['name'] ?? user.userMetadata?['name'] ?? 'Census Officer',
-            id: profile['employee_code'] ?? 'OFF-REMOTE',
-            role: profile['role'] ?? 'Enumerator',
-            district: 'Central Division',
-            email: email,
-            password: '',
-          );
-        }
-      } catch (profileError) {
-        debugPrint('[SupabaseService] Profile query notice: $profileError');
-      }
-
-      // Return officer from auth metadata
-      final meta = user.userMetadata ?? {};
-      return Officer(
-        name: meta['name'] ?? 'Census Officer',
-        id: meta['employee_code'] ?? 'OFF-${user.id.substring(0, 8)}',
-        role: meta['role'] ?? 'Enumerator',
-        district: 'Central Division',
-        email: email,
-        password: '',
-      );
+      return await _fetchOfficerForUser(user, email: email);
     } catch (e) {
-      debugPrint('[SupabaseService] Auth failed: $e, checking mock fallback');
-      return _fallbackMockLogin(email, password);
+      debugPrint('[SupabaseService] Auth failed: $e');
+      return null;
     }
   }
 
-  /// Sign out
+  /// Check and retrieve existing authenticated session on app start
+  static Future<Officer?> getCurrentOfficer() async {
+    if (!_initialized) return null;
+    try {
+      final session = client.auth.currentSession;
+      final user = client.auth.currentUser;
+      if (session == null || user == null) {
+        return null;
+      }
+      return await _fetchOfficerForUser(user, email: user.email ?? '');
+    } catch (e) {
+      debugPrint('[SupabaseService] getCurrentOfficer error: $e');
+      return null;
+    }
+  }
+
+  /// Fetch officer metadata from public.profiles or public.enumerator
+  static Future<Officer> _fetchOfficerForUser(User user, {required String email}) async {
+    // 1. Check public.profiles first if available
+    try {
+      final profile = await client
+          .from('profiles')
+          .select()
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+
+      if (profile != null) {
+        return Officer(
+          name: profile['full_name'] ?? 'Census Officer',
+          id: profile['employee_code'] ?? 'OFF-${user.id.substring(0, 8)}',
+          role: profile['role'] ?? 'ENUMERATOR',
+          district: 'Central Division',
+          email: email.isNotEmpty ? email : (user.email ?? ''),
+          password: '',
+        );
+      }
+    } catch (_) {
+      // profiles table might not be queried or present yet
+    }
+
+    // 2. Check public.enumerator
+    try {
+      final enumerator = await client
+          .from('enumerator')
+          .select()
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+
+      if (enumerator != null) {
+        return Officer(
+          name: enumerator['name'] ?? user.userMetadata?['name'] ?? 'Census Officer',
+          id: enumerator['employee_code'] ?? 'OFF-${user.id.substring(0, 8)}',
+          role: enumerator['role'] ?? 'ENUMERATOR',
+          district: 'Central Division',
+          email: email.isNotEmpty ? email : (user.email ?? ''),
+          password: '',
+        );
+      }
+    } catch (e) {
+      debugPrint('[SupabaseService] Enumerator fetch notice: $e');
+    }
+
+    // 3. Fallback to auth raw user metadata
+    final meta = user.userMetadata ?? {};
+    return Officer(
+      name: meta['name'] ?? 'Census Officer',
+      id: meta['employee_code'] ?? 'OFF-${user.id.substring(0, 8)}',
+      role: meta['role'] ?? 'ENUMERATOR',
+      district: 'Central Division',
+      email: email.isNotEmpty ? email : (user.email ?? ''),
+      password: '',
+    );
+  }
+
+  /// Sign out from Supabase Auth
   static Future<void> signOut() async {
     if (_initialized) {
       try {
@@ -94,6 +138,318 @@ class SupabaseService {
       } catch (e) {
         debugPrint('[SupabaseService] Sign out error: $e');
       }
+    }
+  }
+
+  // ─── Real Supabase Database CRUD Operations ───────────────────────────────
+
+  /// Fetch dashboard counts directly from Supabase
+  static Future<Map<String, dynamic>> getDashboardStats() async {
+    if (!_initialized) {
+      return {
+        'totalHouseholds': '0',
+        'totalPersons': '0',
+        'districtsCovered': '4 / 4',
+        'overallCompletion': '100%',
+        'overallCompletionValue': 1.0,
+      };
+    }
+
+    try {
+      final hhCountRes = await client.from('household').select('household_id');
+      final personCountRes = await client.from('person').select('person_id');
+      final cityCountRes = await client.from('city').select('city_id');
+
+      final hhCount = hhCountRes.length;
+      final personCount = personCountRes.length;
+      final cityCount = cityCountRes.length;
+
+      return {
+        'totalHouseholds': '$hhCount',
+        'totalPersons': '$personCount',
+        'districtsCovered': '$cityCount / 4',
+        'overallCompletion': hhCount > 0 ? 'Live DB' : '0%',
+        'overallCompletionValue': hhCount > 0 ? 0.75 : 0.0,
+      };
+    } catch (e) {
+      debugPrint('[SupabaseService] getDashboardStats error: $e');
+      return {
+        'totalHouseholds': '0',
+        'totalPersons': '0',
+        'districtsCovered': '4 / 4',
+        'overallCompletion': 'Error',
+        'overallCompletionValue': 0.0,
+      };
+    }
+  }
+
+  /// Fetch all households from Supabase
+  static Future<List<Household>> getAllHouseholds() async {
+    if (!_initialized) return [];
+    try {
+      final data = await client.from('household').select('''
+        household_id,
+        household_number,
+        residents_count,
+        mobile_contact,
+        building(
+          building_number,
+          census_house_number,
+          address(
+            locality,
+            street_name,
+            house_number
+          )
+        ),
+        person!fk_household_head_person(
+          name
+        )
+      ''').order('created_at', ascending: false);
+
+      return (data as List).map<Household>((row) {
+        final bld = row['building'] as Map<String, dynamic>?;
+        final addr = bld != null ? bld['address'] as Map<String, dynamic>? : null;
+        final person = row['person'] as Map<String, dynamic>?;
+
+        final street = addr?['street_name'] ?? '';
+        final locality = addr?['locality'] ?? '';
+        final houseNo = addr?['house_number'] ?? '';
+        final fullAddr = [houseNo, street, locality].where((s) => s.isNotEmpty).join(', ');
+
+        return Household(
+          id: row['household_number'] ?? 'HH-UNKNOWN',
+          headName: person?['name'] ?? 'Head of Household',
+          memberCount: (row['residents_count'] as num?)?.toInt() ?? 0,
+          address: fullAddr.isNotEmpty ? fullAddr : 'Census Block 101',
+          phase1Complete: true,
+          phase2Complete: person != null,
+          dbId: row['household_id'],
+        );
+      }).toList();
+    } catch (e) {
+      debugPrint('[SupabaseService] getAllHouseholds error: $e');
+      return [];
+    }
+  }
+
+  /// Search households by household_number or head name in Supabase
+  static Future<List<Household>> searchHouseholds(String query) async {
+    final all = await getAllHouseholds();
+    final q = query.trim().toUpperCase();
+    return all.where((h) {
+      return h.id.toUpperCase().contains(q) ||
+          h.headName.toUpperCase().contains(q) ||
+          (h.dbId != null && h.dbId!.toUpperCase().contains(q));
+    }).toList();
+  }
+
+  /// Create Phase 1 Census entry directly in Supabase
+  static Future<Household?> createHouseholdPhase1({
+    required String censusHouseNumber,
+    required String buildingNumber,
+    required String locality,
+    required String headName,
+    required int residentsCount,
+    required String headCategory,
+    required int dwellingRooms,
+    String? floorMaterial,
+    String? wallMaterial,
+    String? roofMaterial,
+    String? ownershipStatus,
+    String? waterSource,
+    String? latrineFacility,
+    String? wasteWaterOutlet,
+    String? cookingFuel,
+    String? lightingSource,
+  }) async {
+    if (!_initialized) return null;
+    try {
+      // 1. Get first available enumeration block
+      final blocks = await client.from('enumeration_block').select('block_id').limit(1);
+      final blockId = blocks.isNotEmpty ? blocks[0]['block_id'] : null;
+      if (blockId == null) {
+        throw Exception('No enumeration blocks available in database');
+      }
+
+      // 2. Insert Address
+      final addrRes = await client.from('address').insert({
+        'block_id': blockId,
+        'house_number': buildingNumber,
+        'street_name': 'Census Street',
+        'locality': locality.isNotEmpty ? locality : 'Urban Ward',
+        'pin_code': '226001',
+      }).select('address_id').single();
+      final addressId = addrRes['address_id'];
+
+      // 3. Insert Building
+      final bldRes = await client.from('building').insert({
+        'address_id': addressId,
+        'building_number': buildingNumber,
+        'census_house_number': censusHouseNumber,
+        'floor_material': floorMaterial ?? 'Concrete',
+        'wall_material': wallMaterial ?? 'Burnt Brick',
+        'roof_material': roofMaterial ?? 'R.C.C.',
+        'house_use': 'Residential',
+        'condition': 'Good',
+        'ownership_status': ownershipStatus ?? 'Owned',
+        'dwelling_rooms': dwellingRooms,
+      }).select('building_id').single();
+      final buildingId = bldRes['building_id'];
+
+      // 4. Insert Household
+      final hhRes = await client.from('household').insert({
+        'building_id': buildingId,
+        'household_number': censusHouseNumber,
+        'residents_count': residentsCount,
+        'head_category': headCategory,
+        'married_couples_count': 1,
+        'mobile_contact': '9876543210',
+      }).select('household_id, household_number, residents_count').single();
+      final householdId = hhRes['household_id'];
+
+      // 5. Insert utilities
+      if (waterSource != null) {
+        await client.from('household_water').insert({
+          'household_id': householdId,
+          'source': waterSource,
+          'availability': 'Within premises',
+        });
+      }
+      if (latrineFacility != null) {
+        await client.from('household_sanitation').insert({
+          'household_id': householdId,
+          'latrine_access': true,
+          'latrine_type': latrineFacility,
+          'wastewater_outlet': wasteWaterOutlet ?? 'Connected to sewer',
+          'bathing_facility': true,
+        });
+      }
+      if (cookingFuel != null) {
+        await client.from('household_cooking').insert({
+          'household_id': householdId,
+          'kitchen_available': true,
+          'lpg_png_connection': true,
+          'main_fuel': cookingFuel,
+        });
+      }
+      if (lightingSource != null) {
+        await client.from('household_utility').insert({
+          'household_id': householdId,
+          'lighting_source': lightingSource,
+        });
+      }
+
+      // 6. Insert Head Person record & link
+      if (headName.isNotEmpty) {
+        final pRes = await client.from('person').insert({
+          'household_id': householdId,
+          'name': headName,
+          'relationship_to_head': 'Head',
+          'sex': 'Male',
+          'age_completed_years': 40,
+          'marital_status': 'Currently Married',
+        }).select('person_id').single();
+        final personId = pRes['person_id'];
+
+        await client
+            .from('household')
+            .update({'head_person_id': personId})
+            .eq('household_id', householdId);
+      }
+
+      return Household(
+        id: censusHouseNumber,
+        headName: headName.isNotEmpty ? headName : 'Head of Household',
+        memberCount: residentsCount,
+        address: locality.isNotEmpty ? locality : 'Census Block',
+        phase1Complete: true,
+        phase2Complete: false,
+        dbId: householdId,
+      );
+    } catch (e) {
+      debugPrint('[SupabaseService] createHouseholdPhase1 error: $e');
+      rethrow;
+    }
+  }
+
+  static bool _isUuid(String str) {
+    final uuidRegex = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    return uuidRegex.hasMatch(str);
+  }
+
+  /// Update residents count of a household in Supabase
+  static Future<bool> updateHouseholdResidentsCount({
+    required String householdIdOrNumber,
+    required int count,
+  }) async {
+    if (!_initialized) return false;
+    try {
+      final query = client.from('household').update({'residents_count': count});
+      final res = _isUuid(householdIdOrNumber)
+          ? await query.eq('household_id', householdIdOrNumber).select()
+          : await query.eq('household_number', householdIdOrNumber).select();
+
+      return (res as List).isNotEmpty;
+    } catch (e) {
+      debugPrint('[SupabaseService] updateHouseholdResidentsCount error: $e');
+      return false;
+    }
+  }
+
+  /// Delete a household in Supabase
+  static Future<bool> deleteHousehold(String householdIdOrNumber) async {
+    if (!_initialized) return false;
+    try {
+      if (_isUuid(householdIdOrNumber)) {
+        await client.from('household').delete().eq('household_id', householdIdOrNumber);
+      } else {
+        await client.from('household').delete().eq('household_number', householdIdOrNumber);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[SupabaseService] deleteHousehold error: $e');
+      return false;
+    }
+  }
+
+  /// Create Person entry (Phase 2) in Supabase
+  static Future<bool> createPersonPhase2({
+    required String householdIdOrNumber,
+    required String name,
+    required String relationship,
+    required String sex,
+    required int age,
+    required String maritalStatus,
+    String? education,
+    String? occupation,
+  }) async {
+    if (!_initialized) return false;
+    try {
+      // Find matching household_id
+      final query = client.from('household').select('household_id');
+      final hh = _isUuid(householdIdOrNumber)
+          ? await query.eq('household_id', householdIdOrNumber).limit(1)
+          : await query.eq('household_number', householdIdOrNumber).limit(1);
+
+      if (hh.isEmpty) {
+        throw Exception('Household $householdIdOrNumber not found in Supabase');
+      }
+      final dbHhId = hh[0]['household_id'];
+
+      await client.from('person').insert({
+        'household_id': dbHhId,
+        'name': name,
+        'relationship_to_head': relationship,
+        'sex': sex,
+        'age_completed_years': age,
+        'marital_status': maritalStatus,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('[SupabaseService] createPersonPhase2 error: $e');
+      rethrow;
     }
   }
 
@@ -132,15 +488,5 @@ class SupabaseService {
       debugPrint('[SupabaseService] Fetch reference data error: $e');
       return {};
     }
-  }
-
-  /// Fallback matching against mock data for offline support
-  static Officer? _fallbackMockLogin(String email, String password) {
-    for (final o in MockData.officers) {
-      if (o.email == email && o.password == password) {
-        return o;
-      }
-    }
-    return null;
   }
 }
