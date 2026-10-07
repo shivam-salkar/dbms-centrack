@@ -143,51 +143,51 @@ class SupabaseService {
 
   // ─── Real Supabase Database CRUD Operations ───────────────────────────────
 
-  /// Fetch dashboard counts directly from Supabase
+  /// Fetch dashboard counts directly from Supabase using efficient count queries
   static Future<Map<String, dynamic>> getDashboardStats() async {
     if (!_initialized) {
       return {
         'totalHouseholds': '0',
         'totalPersons': '0',
-        'districtsCovered': '4 / 4',
+        'districtsCovered': '14 Wards',
         'overallCompletion': '100%',
         'overallCompletionValue': 1.0,
       };
     }
 
     try {
-      final hhCountRes = await client.from('household').select('household_id');
-      final personCountRes = await client.from('person').select('person_id');
-      final cityCountRes = await client.from('city').select('city_id');
-
-      final hhCount = hhCountRes.length;
-      final personCount = personCountRes.length;
-      final cityCount = cityCountRes.length;
+      final hhCount = await client.from('household').count();
+      final personCount = await client.from('person').count();
+      final wardCount = await client.from('ward').count();
 
       return {
         'totalHouseholds': '$hhCount',
         'totalPersons': '$personCount',
-        'districtsCovered': '$cityCount / 4',
+        'districtsCovered': '$wardCount Wards',
         'overallCompletion': hhCount > 0 ? 'Live DB' : '0%',
-        'overallCompletionValue': hhCount > 0 ? 0.75 : 0.0,
+        'overallCompletionValue': hhCount > 0 ? 0.85 : 0.0,
       };
     } catch (e) {
       debugPrint('[SupabaseService] getDashboardStats error: $e');
       return {
         'totalHouseholds': '0',
         'totalPersons': '0',
-        'districtsCovered': '4 / 4',
+        'districtsCovered': 'Mumbai',
         'overallCompletion': 'Error',
         'overallCompletionValue': 0.0,
       };
     }
   }
 
-  /// Fetch all households from Supabase
-  static Future<List<Household>> getAllHouseholds() async {
+  /// Fetch households from Supabase with server-side pagination and filtering
+  static Future<List<Household>> getAllHouseholds({
+    int limit = 25,
+    int offset = 0,
+    String? query,
+  }) async {
     if (!_initialized) return [];
     try {
-      final data = await client.from('household').select('''
+      var queryBuilder = client.from('household').select('''
         household_id,
         household_number,
         residents_count,
@@ -204,7 +204,15 @@ class SupabaseService {
         person!fk_household_head_person(
           name
         )
-      ''').order('created_at', ascending: false);
+      ''');
+
+      if (query != null && query.trim().isNotEmpty) {
+        queryBuilder = queryBuilder.ilike('household_number', '%${query.trim()}%');
+      }
+
+      final data = await queryBuilder
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
 
       return (data as List).map<Household>((row) {
         final bld = row['building'] as Map<String, dynamic>?;
@@ -220,7 +228,7 @@ class SupabaseService {
           id: row['household_number'] ?? 'HH-UNKNOWN',
           headName: person?['name'] ?? 'Head of Household',
           memberCount: (row['residents_count'] as num?)?.toInt() ?? 0,
-          address: fullAddr.isNotEmpty ? fullAddr : 'Census Block 101',
+          address: fullAddr.isNotEmpty ? fullAddr : 'Census Block',
           phase1Complete: true,
           phase2Complete: person != null,
           dbId: row['household_id'],
@@ -232,15 +240,10 @@ class SupabaseService {
     }
   }
 
-  /// Search households by household_number or head name in Supabase
-  static Future<List<Household>> searchHouseholds(String query) async {
-    final all = await getAllHouseholds();
-    final q = query.trim().toUpperCase();
-    return all.where((h) {
-      return h.id.toUpperCase().contains(q) ||
-          h.headName.toUpperCase().contains(q) ||
-          (h.dbId != null && h.dbId!.toUpperCase().contains(q));
-    }).toList();
+  /// Search households by household_number using server-side query with limit
+  static Future<List<Household>> searchHouseholds(String query, {int limit = 20}) async {
+    if (!_initialized || query.trim().isEmpty) return [];
+    return getAllHouseholds(limit: limit, offset: 0, query: query);
   }
 
   /// Create Phase 1 Census entry directly in Supabase

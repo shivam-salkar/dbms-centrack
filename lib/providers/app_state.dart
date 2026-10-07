@@ -47,7 +47,7 @@ class AppState extends ChangeNotifier {
   Future<void> refreshDashboardData() async {
     try {
       final stats = await SupabaseService.getDashboardStats();
-      final hhList = await SupabaseService.getAllHouseholds();
+      final hhList = await SupabaseService.getAllHouseholds(limit: 25, offset: 0);
       _dashboardStats = stats;
       _households = hhList;
       notifyListeners();
