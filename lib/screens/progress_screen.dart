@@ -376,7 +376,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Report downloaded as PDF', style: GoogleFonts.notoSans()),
+                      content: Text('Progress report export is available in full release (Demo mode)', style: GoogleFonts.notoSans()),
                       duration: const Duration(seconds: 2),
                     ),
                   );

@@ -28,7 +28,7 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
 
   Map<String, dynamic> get _current => _members[_currentMemberIndex];
 
-  void set(String key, dynamic value) {
+  void _setField(String key, dynamic value) {
     setState(() => _current[key] = value);
   }
 
@@ -179,9 +179,16 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
                   const SizedBox(height: 6),
                   Builder(
                     builder: (context) {
-                      final available = appState.households.isNotEmpty
-                          ? appState.households
-                          : MockData.phase1CompletedHouseholds;
+                      final available = appState.households;
+                      if (available.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            'No households available. Create one in Phase 1 first.',
+                            style: GoogleFonts.notoSans(fontSize: 13, color: AppColors.textSecondary),
+                          ),
+                        );
+                      }
                       return DropdownButtonFormField<String>(
                         value: _selectedHouseholdId,
                         isExpanded: true,
@@ -407,7 +414,6 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
   }
 
   Widget _buildTextField(String label, String key, {int? maxLength, required Color textColor}) {
-    final controller = TextEditingController(text: _current[key] as String? ?? '');
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -416,11 +422,11 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
           Text(label, style: GoogleFonts.notoSans(fontSize: 12, color: textColor)),
           const SizedBox(height: 4),
           TextFormField(
-            controller: controller,
+            initialValue: _current[key] as String? ?? '',
             maxLength: maxLength,
             style: GoogleFonts.notoSans(fontSize: 13),
             decoration: const InputDecoration(isDense: true),
-            onChanged: (v) => set(key, v),
+            onChanged: (v) => _setField(key, v),
           ),
         ],
       ),
@@ -445,7 +451,7 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
               value: item,
               child: Text(item, style: GoogleFonts.notoSans(fontSize: 13, color: textColor)),
             )).toList(),
-            onChanged: (v) => set(key, v),
+            onChanged: (v) => _setField(key, v),
           ),
         ],
       ),
@@ -473,12 +479,12 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
                   child: Radio<String>(
                     value: opt,
                     groupValue: value,
-                    onChanged: (v) => set(key, v),
+                    onChanged: (v) => _setField(key, v),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
                 GestureDetector(
-                  onTap: () => set(key, opt),
+                  onTap: () => _setField(key, opt),
                   child: Text(opt, style: GoogleFonts.notoSans(fontSize: 12, color: textColor)),
                 ),
                 const SizedBox(width: 8),
@@ -517,9 +523,9 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
               );
               if (picked != null) {
                 final formatted = DateFormat('dd/MM/yyyy').format(picked);
-                set(key, formatted);
+                _setField(key, formatted);
                 final age = DateTime.now().year - picked.year;
-                set('age', age.toString());
+                _setField('age', age.toString());
               }
             },
             child: Container(
@@ -564,7 +570,7 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
             keyboardType: TextInputType.number,
             style: GoogleFonts.notoSans(fontSize: 13),
             decoration: const InputDecoration(isDense: true, suffixText: 'years'),
-            onChanged: (v) => set('age', v),
+            onChanged: (v) => _setField('age', v),
           ),
         ],
       ),
@@ -582,7 +588,7 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.remove, size: 18),
-            onPressed: value > 0 ? () => set(key, value - 1) : null,
+            onPressed: value > 0 ? () => _setField(key, value - 1) : null,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
@@ -598,7 +604,7 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.add, size: 18),
-            onPressed: () => set(key, value + 1),
+            onPressed: () => _setField(key, value + 1),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
@@ -641,7 +647,7 @@ class _Phase2EntryScreenState extends State<Phase2EntryScreen> {
                     } else {
                       list.remove(opt);
                     }
-                    set(key, list);
+                    _setField(key, list);
                   });
                 },
               );

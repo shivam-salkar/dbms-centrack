@@ -157,8 +157,8 @@ class _Phase1EntryScreenState extends State<Phase1EntryScreen> {
   void _handleSaveDraft() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Draft saved locally', style: GoogleFonts.notoSans()),
-        duration: const Duration(seconds: 2),
+        content: Text('Draft saving is not supported in demo mode. Please complete and submit the form.', style: GoogleFonts.notoSans()),
+        duration: const Duration(seconds: 3),
       ),
     );
   }

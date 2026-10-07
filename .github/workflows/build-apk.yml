@@ -80,14 +80,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create v2.4.1 output/janganatest-arm64-v8a-release.apk \
-            --title "Jangana Census Tracker v2.4.1 (ARM64-v8a)" \
-            --notes "### Jangana Census Tracker v2.4.1 (ARM64-v8a Release)
+          if gh release view v2.4.1 >/dev/null 2>&1; then
+            gh release upload v2.4.1 output/janganatest-arm64-v8a-release.apk --clobber
+          else
+            gh release create v2.4.1 output/janganatest-arm64-v8a-release.apk \
+              --title "Jangana Census Tracker v2.4.1 (ARM64-v8a)" \
+              --notes "### Jangana Census Tracker v2.4.1 (ARM64-v8a Release)
           * **Target Architecture**: Android ARM64-v8a only
           * **Internet Connectivity**: Added Android internet permissions in \`AndroidManifest.xml\` for live Supabase Auth and database operations.
           * **Supabase Integration**: Connected to live Supabase project with 15,000 synthetic Mumbai records.
           * **Demo Accounts**:
             * **Admin**: \`admin.demo@janganatest.local\` / \`JanganaDemo@2026\`
             * **Enumerator 1**: \`enumerator1.demo@janganatest.local\` / \`JanganaEnum@2026\`
-            * **Enumerator 2**: \`enumerator2.demo@janganatest.local\` / \`JanganaEnum2@2026\`" \
-            --clobber
+            * **Enumerator 2**: \`enumerator2.demo@janganatest.local\` / \`JanganaEnum2@2026\`"
+          fi

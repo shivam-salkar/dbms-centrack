@@ -61,16 +61,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void login(Officer officer) {
+  Future<void> login(Officer officer) async {
     _currentOfficer = officer;
-    refreshDashboardData();
     notifyListeners();
+    await refreshDashboardData();
   }
 
-  void logout() {
-    SupabaseService.signOut();
+  Future<void> logout() async {
+    await SupabaseService.signOut();
     _currentOfficer = null;
     _activeDrawerIndex = 0;
+    _households = [];
+    _dashboardStats = {
+      'totalHouseholds': '0',
+      'totalPersons': '0',
+      'districtsCovered': '0 Wards',
+      'overallCompletion': '0%',
+      'overallCompletionValue': 0.0,
+    };
     notifyListeners();
   }
 

@@ -355,7 +355,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             // ── Recent Activity ──
             Text(
-              'Activity Trail',
+              'Activity Trail (Sample)',
               style: GoogleFonts.notoSans(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
